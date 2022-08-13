@@ -198,7 +198,7 @@ int main()
 ```
 运行结果如下：
 ```
-zhihua@linux:~/练习$ ./a.out        
+xiaocer@linux:~/练习$ ./a.out        
 100007f
 100007f
 ```

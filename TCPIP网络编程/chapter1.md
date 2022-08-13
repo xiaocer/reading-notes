@@ -5,11 +5,11 @@
 我们使用c语言编译器gcc编译c源程序。比如说现在有一个源文件hello_server.c，则对该文件进行编译的命令为:
 ```
 //-o是用来指定可执行文件名的可选参数，server为可执行文件名
-[zhihua@localhost~]$gcc hello_server.c -o server
+[xiaocer@localhost~]$gcc hello_server.c -o server
 ```
 运行可执行文件的命令为：
 ```
-[zhihua@localhost~]$./server
+[xiaocer@localhost~]$./server
 ```
 2. 基于Linux的文件操作
 ```
