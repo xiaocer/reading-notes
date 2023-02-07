@@ -1,15 +1,25 @@
 # I/O复用
+
+本节要点：
+
+1. 熟悉select并且使用select实现一个简易的IO复用服务器端
+2. 了解poll
+3. 知道IO复用技术之一的select的优缺点
+
 ## 1.基于IO复用的服务器端
 IO复用技术：可以在不创建多个进程的同时向多个客户端提供服务。
 1. 多进程服务器端模型
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-ca31a50b80e6b0d5.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+	1. 多进程服务器的缺点是：
+		1. 创建进程代价大
+		2. 进程间通信相对复杂
 2. I/O复用服务器端模型
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-de81893ee8e44ace.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 ## 2.select函数
 ##### 1.功能
 使用select函数可以将多个文件描述符集中到一起统一监视。
 ##### 2.函数原型
-```
+```c
 #include <sys/select.h>
 #include <sys/time.h>
 int select(int maxfd, fd_set* readset,
@@ -36,7 +46,7 @@ const struct timeval* timeout);
 ==其中FD_ISSET函数用于验证select函数的调用结果，select函数会在监视的文件描述符发生变化时返回==
 2. 设置监视范围：将最大的文件描述符值加1作为第一个参数。（文件描述符值从0开始）
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-c43836b18d74c6c9.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
-3. 设置超时时间:将秒数填入结构体的第一个成员，毫秒数填入第二个成员。
+3. 设置超时时间:将秒数填入结构体的第一个成员，微秒数填入第二个成员。
 ```
 struct timeval
 {
@@ -45,7 +55,7 @@ struct timeval
 }
 ```
 4. 调用select函数后查看结果
-5. select函数调用示例
+5. select函数调用示例：读取控制台输入的数据，标准输入对应文件描述符0
 ```
 #include <cstdio>
 #include <sys/select.h>
@@ -95,12 +105,12 @@ int main()
 1. 优点：跨平台
 2. 缺点
 ```
-1. 每次调用select，都需要将fd集合从用户态拷贝到内核态，这个开销在fd很多时会很大。
+1. 每次调用select，都需要将fd集合从用户态拷贝到内核态，这个开销在fd很多时会很大。调用成功返回后，还需要将fd集合从内核态拷贝到用户态。
 2. 每次调用select时都需要在内核遍历传递进来的所有fd,这个开销在fd很多时会很大。
-3. select支持的文件描述符数量太小了，默认是1024
+3. select支持的文件描述符数量太小了，默认是1024。如果需要更改，需要重新编译内核。
 ```
 ##### 5.实现I/O复用回声服务器端
-```
+```c
 #include <stdio.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -136,7 +146,7 @@ int main(int argc, char* argv[])
     struct timeval time; 
     int fd_max = serv_sock, fd_num;
 
-    char buff[30];
+    char buff[30] = {0};
     ssize_t len;
     char dest_ip[INET_ADDRSTRLEN];
     while (1)
@@ -148,8 +158,8 @@ int main(int argc, char* argv[])
             break;
         else if (fd_num == 0)
         {
-            continue;
             printf("超时返回\n");
+            continue;
         }
         for (int i = 0; i < fd_max + 1; i++)
         {
@@ -171,14 +181,18 @@ int main(int argc, char* argv[])
                 else
                 {
                     len = read(i, buff, sizeof(buff));
+                    // 客户端断开连接
                     if (len == 0)
                     {
                         FD_CLR(i, &reads);
                         close(i);
                         printf("closed client:%d\n", i);
                     }
-                    else
+                    else if (len > 0) {
+                        printf("message from client:%s\n", buff);
                         write(i, buff, len);    // 回声
+                        memset(buff, 0, sizeof(buff));
+                    }
                 }
             }   
         }
@@ -188,7 +202,7 @@ int main(int argc, char* argv[])
 ```
 ## 3.poll函数
 ##### 1.功能
-和select一样
+和select一样。区别比如说select函数中一个描述符对应一个比特位，而poll函数中一个文件描述符对应一个结构体。
 ##### 2.函数原型
 ```
 #include <poll.h>

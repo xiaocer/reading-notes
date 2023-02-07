@@ -1,12 +1,17 @@
 # 套接字和标准I/O
 ## 1.标准I/O函数
-##### 1.标准IO函数的两个优点
-1. 具有良好的移植性
-2. 可以利用缓冲提高性能（I/O缓冲和套接字缓冲之间的关系）
-![image.png](https://upload-images.jianshu.io/upload_images/17728742-a42dd6f7f72b2c00.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
-##### 2.标准I/O函数与系统函数之间的性能对比
+##### 1.标准IO函数的优点和缺点：
+1. 优点：
+    1. 具有良好的移植性
+    2. 可以利用缓冲提高性能（I/O缓冲和套接字缓冲之间的关系）：比如说使用fputs函数传输字符串Hello时，首先将数据传递到标准IO函数的输出缓冲，然后数据将移动到套接字输出缓冲，最后将字符串发送到对方主机。
+    ![image.png](https://upload-images.jianshu.io/upload_images/17728742-a42dd6f7f72b2c00.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+2. 缺点：
+	1. 不容易进行双向通信，因为创建套接字默认返回的是文件描述符，而不是FILE结构体指针
+	2. 有时可能频繁调用fflush函数
+	3. 需要以FILE结构体指针的形式返回文件描述符（其中包含成员表示文件描述符）
+##### 2.标准I/O函数与系统函数之间的性能对比：在传输的数据很多时，使用标准IO函数可以提高性能
 1. 使用系统函数复制一个较大的文件
-```
+```c
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
@@ -33,7 +38,7 @@ int main()
 // copy spend time:1253
 ```
 2. 标准IO函数复制一个较大的文件（IO缓冲可以提高性能）
-```
+```c
 #include <stdio.h>
 #include <time.h>
 
@@ -58,8 +63,8 @@ int main()
 //copy spend time:34
 ```
 ##### 3.使用标准IO函数
-1. fdopen函数：将创建套接字时的文件描述符转换为标准IO函数中使用的FILE结构体指针
-```
+1. fdopen函数：将创建套接字时的文件描述符转换为标准IO函数中使用的FILE结构体指针。转换为FILE结构体指针的目的是可以通过该指针调用标准IO函数。
+```c
 #include <stdio.h>
 FILE* fdopen(int fildes, const char* mode);
 函数参数：
@@ -84,7 +89,7 @@ int main()
 }
 ```
 2. fileno函数：将FILE结构体指针转化为文件描述符
-```
+```c
 #include <stdio.h>
 int fileno(FILE* stream);
 函数返回值：
@@ -103,3 +108,103 @@ int main()
     return 0;
 }
 ```
+
+##### 4.基于套接字的标准IO函数的使用
+
+1. 基于标准IO函数的数据交换形式的回声服务器端如下：
+
+   ```c
+   #include <stdio.h>
+   #include <arpa/inet.h>
+   #include <stdlib.h>
+   #include <string.h>
+   #include <unistd.h>
+   
+   int main(int argc, char* argv[]) {
+       if (argc != 2) {
+           printf("usage:%s <port>\n", argv[0]);
+           return -1;
+       }
+       int lfd = socket(PF_INET, SOCK_STREAM, 0);
+       
+       struct sockaddr_in serv_addr;
+       serv_addr.sin_family = AF_INET;
+       serv_addr.sin_port = htons(atoi(argv[1]));
+       serv_addr.sin_addr.s_addr = INADDR_ANY;
+       bind(lfd, (const struct sockaddr*)&serv_addr, sizeof(serv_addr));
+   
+       listen(lfd, 128);
+   
+       int client_fd = accept(lfd, NULL, NULL);
+       
+       FILE* readp;
+       FILE* writep;
+   
+       readp = fdopen(client_fd, "r");
+       writep = fdopen(client_fd, "w");
+   
+       char message[128] = {0};
+       while (!feof(readp)) {
+           fgets(message, sizeof(message), readp);
+           printf("message from client:%s\n", message);
+           fputs(message, writep);
+           // 保证数据从IO缓冲的输出缓冲输出到套接字的输出缓冲
+           fflush(writep);
+       }
+   
+       fclose(readp);
+       fclose(writep);
+       close(lfd);
+   
+       return 0;
+   }
+   ```
+
+   
+
+2. 基于标准IO函数的数据交换形式的回声客户端如下：
+
+```c
+#include <stdio.h>
+#include <arpa/inet.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        printf("usage:%s <ip> <port>\n", argv[0]);
+        return -1;
+    }
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(atoi(argv[2]));
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    connect(fd, (const sockaddr*)&serv_addr, sizeof(serv_addr));
+
+    FILE* readp = fdopen(fd, "r");
+    FILE* writep = fdopen(fd, "w");
+
+    char message[128] = {0};
+    while (1) {
+        fputs("Input message(Q to quit):", stdout);
+        fgets(message, sizeof(message), stdin);
+        if (!strcmp(message, "q\n") || !strcmp(message, "Q\n")) {
+            break;
+        }
+        fputs(message, writep);
+        fflush(writep);
+        fgets(message, sizeof(message), readp);
+        printf("Message from server:%s\n", message);
+    }
+
+    fclose(readp);
+    fclose(writep);
+
+    return 0;
+}
+```
+

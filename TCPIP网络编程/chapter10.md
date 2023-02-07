@@ -1,12 +1,21 @@
 # 多进程服务器端
+
+本节要点：
+
+1. 熟悉僵尸进程的产生原因以及回收僵尸进程的多种方法
+2. 了解孤儿进程
+3. 熟悉信号处理机制
+4. 知道如何分割IO，在客户端程序中，一个进程用于读，一个进程用于写。
+
 ## 1.并发服务器端实现模型和方法
 1. 多进程服务器：通过创建多个进程提供服务
 2. 多路复用服务器：通过捆绑并统一管理I/O对象提供服务
 3. 多线程服务器：通过生成与客户端等量的线程提供服务
 ## 2.进程
 ##### 1.进程ID
-所有进程都会从OS分配到ID。如下图所示，PID即为进程ID。
+所有进程都会从OS分配到ID。如下图所示，使用ps -au命令查看进程的id。PID即为进程ID。
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-7966504f9e0406b9.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
 ##### 2.fork函数创建进程
 1. fork函数：fork函数复制正在运行的，调用fork函数的进程。执行fork后，两个进程都将会执行fork函数返回后的语句。
 ```
@@ -23,7 +32,7 @@ pid_t fork(void);
 ```
 3. fork函数使用示例
 ```
-#include <cstdio>
+#include <stdio.h>
 #include <unistd.h>
 
 int global = 100;
@@ -45,21 +54,24 @@ int main()
     }
     if (id == 0)
     {
-        printf("pid:%d,global:%d,autovar:%d\n", id, global, autovar);
+        printf("pid:%d,global:%d,autovar:%d\n", getpid(), global, autovar);
     }
     else
     {
-        printf("pid:%d,global:%d,autovar:%d\n", id, global, autovar);
+        printf("pid:%d,global:%d,autovar:%d\n", getpid(), global, autovar);
     }
     return 0;
 }
-// pid:334339,global:0,autovar:100
-// pid:0,global:200,autovar:300
+// pid:78501,global:0,autovar:100
+// pid:78502,global:200,autovar:300
 ```
 ## 3.僵尸(zombie)进程
 进程完成工作后（执行完main中的程序后），应当被销毁但是有时这些进程占用系统的重要资源，变成僵尸进程。==即僵尸进程：子进程死了，父进程没有回收子进程的资源==
 ##### 1.创建僵尸进程示例
-```
+
+​	1. 示例代码如下：
+
+```c
 #include <stdio.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -86,8 +98,20 @@ int main()
     return 0;
 }  
 ```
+2. 验证：
+
+   ```
+   gcc server.c -o server
+   ./server
+   # 可以看到对应的子进程的状态
+   ps -au | grep server
+   ```
+
+   
+
 ##### 2.销毁僵尸进程
-1. 利用wait函数：该函数将会阻塞，直到有子进程终止
+
+1. 利用wait函数：该函数将会阻塞，直到有子进程终止。有多少个子进程，就需要调用多少次wait函数。
 ```
 #include <sys/wait.h>
 pid_t wait(int* statloc);
@@ -169,6 +193,7 @@ int main()
 }
 ```
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-bebf390a0f07eca9.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+3. 使用信号处理机制：在子进程终止时，OS会向父进程发送SIGCHLD信号。因此在父进程中注册SIGCHILD信号的处理函数，在该处理函数中进行子进程资源的回收。
 ## 4.信号处理（signal handling）
 ##### 1、信号与signal函数
 1. 信号：在特定事件发生时由操作系统向进程发送的消息。执行(由操作系统执行)与消息相关的自定义操作的过程称为信号处理。
@@ -237,7 +262,7 @@ int main()
     return 0;
 }
 ```
-对于上述程序的注意事项：发生信号时，将会唤醒由于调用sleep函数而进入阻塞状态的进程。
+对于上述程序的注意事项：发生信号时，将会唤醒由于调用sleep函数而进入阻塞状态的进程，此时不管进程有没有睡够都将继续执行。
 ##### 2.利用sigaction函数进行信号处理
 1. sigaction函数
 ```
@@ -485,6 +510,80 @@ int main(int argc, char* argv[])
 }
 ```
 ##### 2.分割I/O程序
-1. 分割数据的发送和接收过程。分割I/O程序有利于提高同一时间内传输的数据量。理解：默认的分割模型如下图所示：
-![image.png](https://upload-images.jianshu.io/upload_images/17728742-84092d0061a31e3f.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+1. 分割数据的发送和接收过程，主要通过多进程实现：一个父进程用于从套接字的输入缓冲区读数据，另一个子进程将数据写入套接字的输出缓冲区。分割I/O程序有利于提高同一时间内传输的数据量。理解：默认的分割模型如下图所示：
+  ![image.png](https://upload-images.jianshu.io/upload_images/17728742-84092d0061a31e3f.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
+2. 不同进程负责输入和输出，分割IO的回升客户端如下
+
+   ```c
+   // 分割I/O的示例
+   #include <cstdio>
+   #include <sys/socket.h>
+   #include <arpa/inet.h>
+   #include <cstring>
+   #include <cstdlib>
+   #include <unistd.h>
+   
+   #define BUFFSIZE 1024
+   void read_routine(int sockfd, char* buff) {
+       while (1)
+       {
+           ssize_t read_len = read(sockfd, buff, BUFFSIZE);
+           if (read_len == 0) {
+               break;
+           }
+           buff[read_len] = '\0';
+           printf("message from server:%s", buff);
+       }
+   }
+   
+   void write_routine(int sockfd, char* buff) {
+       while (1) {
+           // fputs("Input message(q\\Q to quit):", stdout);
+           fgets(buff, BUFFSIZE, stdin);
+           if (!strcmp(buff, "q\n") || !strcmp(buff, "Q\n")) {
+               shutdown(sockfd, SHUT_WR);
+               break;
+           }
+           
+           write(sockfd, buff, strlen(buff));
+       } 
+   }
+   int main(int argc, char* argv[])
+   {
+       if (argc != 3)
+       {
+           printf("usage:%s <IP> <PORT>", argv[0]);
+           return -1;
+       }
+       // 创建客户端套接字
+       int cli_sock = socket(PF_INET, SOCK_STREAM, 0);
+   
+       // 初始化服务器端地址信息
+       struct sockaddr_in serv_addr;
+       memset(&serv_addr, 0, sizeof(serv_addr));
+       serv_addr.sin_family = AF_INET;
+       serv_addr.sin_port = htons(atoi(argv[2]));
+       serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+   
+       int ret = connect(cli_sock, (const sockaddr*)&serv_addr, sizeof(serv_addr));    
+       if (ret == 0)
+           puts("connected...");
+       
+       char message[BUFFSIZE];
+   
+       pid_t pid = fork();
+       if (pid > 0) {
+           // 父进程读
+           read_routine(cli_sock, message);
+       } else if (pid == 0) {
+           // 子进程写
+           write_routine(cli_sock, message);
+       }
+       
+       close(cli_sock);
+       return 0;
+   }
+   ```
+
+   

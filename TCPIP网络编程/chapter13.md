@@ -1,4 +1,10 @@
 # 多种I/O函数
+
+本节要点：
+
+ 	1. 知道send函数和recv函数的第四参数的常用可选项
+ 	2. 知道recv和writev函数
+
 ## 1.send函数和recv函数
 ##### 1.send函数
 ```
@@ -29,15 +35,16 @@ size_t nbytes, int flags);
 ##### 3.send函数和recv函数的可选项
 该可选项可利用位或运算同时传递多个信息。
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-5685a43f19d9fe54.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
-1. MSG_OOB:
+1. MSG_OOB:TCP 不存在真正意义上的带外数据。这是利用TCP的紧急模式进行传输，该选项只是用于要求接收方紧急处理。
 ```
 //1.发送紧急信息
 //紧急消息的传送只需要在调用send函数时指定MSG_OOB选项
 send(sock, "123", strlen("123"), MSG_OOB);
 
-//2.紧急消息的接收:recv函数的第四个参数指定为MSG_OOB
+//2.紧急消息的接收:当接收到MSG_OOB紧急消息时候，OS将产生SIGURG信号
+// 可以注册SIGURG信号处理函数，在该函数内部调用接收紧急消息的recv函数。recv函数的第四个参数指定为MSG_OOB。
 ```
-2. MSG_PEEK:设置MSG＿PEEK选项并调用recv函数时，即使读取了输入缓冲的数据也不会删除。==这个选项通常和MSG＿DONTWAIT合作，用于调用以非阻塞方式验证待读数据存在与否的函数==
+2. MSG_PEEK:设置MSG＿PEEK选项，在调用recv函数时，即使读取了输入缓冲的数据也不会删除。==这个选项通常和MSG＿DONTWAIT合作，用于调用以非阻塞方式验证待读数据存在与否的函数==
 ```
 // 客户端
 #include <cstdio>
@@ -125,7 +132,7 @@ int main(int argc, char* argv[])
 运行结果如下图所示：
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-f93faecf55df5a02.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 ## 2.readv函数和writev函数
-readv和writev函数的功能：对数据进行整合传输以及发送。==通过writev函数可以将分散保存在多个缓冲中的数据一并发送，通过readv函数可以由多个缓冲分别接收数据。（将输入缓冲中的数据读入不同位置）== 因此适当使用这两个函数可以减少I/O函数的调用次数。
+readv和writev函数的功能：对数据进行整合传输以及发送。==通过writev函数可以将分散保存在多个缓冲地址中的数据一并发送，通过readv函数可以由多个缓冲分别接收数据。（将输入缓冲中的数据读入不同位置）== 因此适当使用这两个函数可以减少I/O函数的调用次数。
 ##### 1.writev函数
 1. 函数声明
 ```
@@ -211,4 +218,7 @@ int main()
 // first message:owor
 ```
 ##### 3.writev函数和readv函数的使用场景
+
+1. 在Nagle算法关闭时，使用writev函数有可能减少发送的数据包个数。
+
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-8003597981cf224a.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)

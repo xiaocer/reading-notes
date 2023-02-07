@@ -1,8 +1,17 @@
 ## 3.chapter-3地址族与数据序列
+
+本节重点：
+
+1. 熟悉网络字节序与主机字节序的相互转换函数
+2. 熟悉表示包含IP地址、端口信息的结构体sockaddr_in结构体的初始化
+
 ##### 0.分配给套接字的IP地址和端口号
-1. ==IP地址是为收发网络数据而分配给计算机的值。== IP地址分为两类：IPv4和IPv6,IPv4标准的四字节IP地址分为网络号和主机号
-![image.png](https://upload-images.jianshu.io/upload_images/17728742-b9f3d7594431227b.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+1. ==IP地址是为收发网络数据而分配给计算机的值。== IP地址分为两类：IPv4和IPv6,IPv4标准的四字节IP地址分为网络号和主机号，或者说网络地址和主机地址。网络数据传输过程中，由网络地址确定是哪一个网络，再由主机地址确定是哪一个主机。
+    ![image.png](https://upload-images.jianshu.io/upload_images/17728742-b9f3d7594431227b.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
 2. 用于区分套接字（应用程序）的端口号。==端口号由16位组成，可分配的端口范围为0到65535==
+
+   ​	1. 注意：TCP套接字和UDP套接字不会共用端口号
 ##### 1.表示ipv4地址的结构体,sockaddr_in,位于netinet/in.h头文件中。
 ```
 struct sockaddr_in 
@@ -20,8 +29,8 @@ struct in_addr
 
 ##### 2.每种协议族使用的地址族也不同，比如说：
 ```
-AF_INET:ipv4网络协议中使用的地址族
-AF_INET6:ipv6网络协议中使用的地址族
+AF_INET:ipv4网络协议族中使用的地址族
+AF_INET6:ipv6网络协议族中使用的地址族
 AF_LOCAL:本地通信中采用的unix协议的地址族
 ```
 ##### 3.第三个结构体sockaddr（并非只为IPv4设计）
@@ -39,7 +48,8 @@ struct sockaddr
 1.大端序(Big Endian)：高位字节数存放在低位地址
 2.小端序(Little Endian):高位字节数存放在高位地址
 ```
-2.在Intel系列CPU中是以小端序保存数据的，可以用如下程序解释：
+2.在Intel系列和AMD系列CPU中是以小端序保存数据的，可以用如下程序解释：
+
 ```
 #include <iostream>
 
@@ -113,6 +123,7 @@ int main()
 **5.将字符串表示的ip地址转化为大端序(网络字节序)整形数值。**
 
 1.inet_addr函数的应用：
+
 ```
 //函数声明
 in_addr_t inet_addr(const char* cp);
@@ -202,7 +213,7 @@ xiaocer@linux:~/练习$ ./a.out
 100007f
 100007f
 ```
-**6.将网络字节序整数型ip地址转化为字符串形式**
+**6.将网络字节序整数型ip地址转化为字符串主机字节序形式**
 
 1.inet_ntoa函数的应用
 ```
@@ -275,16 +286,19 @@ int main()
 ==综上：==
 
 <font color = blue size = 6px>将字符串表示的ip地址转化为大端序(网络字节序)整形数值的方法有以下几种：</font>
+
 1. 使用inet_addr函数
 2. 使用inet_aton函数
-3. 使用inet_pton函数
+3. 使用inet_pton函数（记住）
 
 <font color = blue size = 6px>将网络字节序整数型ip地址转化为字符串形式：</font>
+
 1. 使用inet_ntoa函数
-2. 使用inet_ntop函数
+2. 使用inet_ntop函数（记住）
 ##### 5.INADDR_ANY的应用
 每次创建服务器端套接字都要输入IP地址有些繁琐，所以==可以利用INADDR_ANY初始化地址信息；如果采用这种方式分配服务器端的IP地址，== 就可以自动获取服务器端的IP地址。
 比如说在创建服务器端时：
+
 ```
 struct sockaddr_in serv_addr;
 serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -293,6 +307,7 @@ serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 **bind函数：** 为套接字（服务端或者客户端）初始化地址信息。
 
 1.bind函数声明：
+
 ```
 //函数声明：
 #include <sys/socket.h>
@@ -313,86 +328,92 @@ addr.sin_addr.s_addr = htonl(INADDR_ANY);
 bind(server_socket,(struct sockaddr*)&server_addr,sizeof(server_addr));
 ```
 3. ==在一些特殊的场景中，需要客户端程序以指定的端口去连接服务器。这时就可以使用bind函数绑定一个具体的端口。（客户端绑定端口号0，系统会随机分配一个端口号）==
-```
 
-```
 
 ##### 7.一个简单示例
 1. 服务器端:往一个客户端发送"HelloWorld"
 ```
-#include <cstdio>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <cstring>
-#include <cstdlib>
+#include <stdio.h>
 #include <unistd.h>
+#include<arpa/inet.h>
+#include <stdlib.h>
+#include <string.h>
 
 int main(int argc, char* argv[])
 {
-    if (argc != 2)
-    {
+    if (argc != 2) {
         printf("usage:%s <port>\n", argv[0]);
         return -1;
     }
+
     // 创建服务器端套接字
-    int sockfd;
-    sockfd = socket(PF_INET, SOCK_STREAM, 0);
-    if (sockfd == -1)
-    {
-        printf("socket()error!");
+    int lfd = socket(PF_INET, SOCK_STREAM, 0);
+    if (lfd == -1) {
+        perror("socket() error\n");
         return -1;
     }
-    
+
+    // 设置端口复用
+    int optval = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+
     // 分配套接字地址
-    struct sockaddr_in addr_in;
-    memset(&addr_in, 0, sizeof(addr_in));
-    addr_in.sin_family = AF_INET;   // ipv4协议地址族
-    addr_in.sin_port = htons(atoi(argv[1]));    
-    addr_in.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(sockfd, (struct sockaddr*)&addr_in, sizeof(addr_in)) == -1)
-    {
-        printf("bind()error!");
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(atoi(argv[1]));
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(lfd, (const struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
+        perror("bind() error\n");
+        close(lfd);
         return -1;
     }
-
     // 侦听客户端连接请求
-    if (listen(sockfd, 15) == -1)
-    {
-        printf("listen()error!");
+    if (listen(lfd, 128) == -1) {
+        perror("listen() error\n");
+        close(lfd);
         return -1;
     }
 
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
     // 受理客户端连接请求
-    struct sockaddr_in client_addr_in;
-    socklen_t client_addr_size = sizeof(client_addr_in);
-    int clnt_fd = accept(sockfd, (struct sockaddr*)&client_addr_in, &client_addr_size);
-    if (clnt_fd == -1)
-    {
-        printf("accept()error!");
+    int clifd = accept(lfd, (struct sockaddr*)&client_addr, &addr_len);
+    if (clifd == -1) {
+        perror("accept() error\n");
+        close(lfd);
+        return -1;
+    }
+    char ip[64] = {0};
+    printf("客户端ip:%s,端口号:%d\n", 
+        inet_ntop(AF_INET, (const void*)&client_addr.sin_addr.s_addr, ip, sizeof(ip)),
+        ntohs(client_addr.sin_port));
+
+    // 通信
+    const char* str = "HelloWorld";
+    if (write(clifd, str, strlen(str) + 1) == -1) {
+        perror("accept() error\n");
+        close(lfd);
+        close(clifd);
         return -1;
     }
 
-    // O
-    const char* message = "HelloWorld";
-    write(clnt_fd, message, strlen(message));
-    
     // 释放连接
-    close(sockfd);
-    close(clnt_fd);
-     
+    close(clifd);
+    close(lfd);
+
     return 0;
 }
+
 
 ```
 2. 客户端:接受来自服务端发送的"HelloWorld"
 ```
-#include <cstdio>
+#include <stdio.h>
 #include <sys/socket.h>
-#include <cstdlib>
+#include <stdlib.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <cstring>
+#include <string.h>
 
 int main(int argc, char* argv[])
 {
@@ -419,10 +440,11 @@ int main(int argc, char* argv[])
     if (ret == -1)
     {
         printf("connect() error!\n");
+        close(sockfd);
         return -1;
     }
 
-    // I
+    // 通信
     char buff[100] = {0};
     int read_len = read(sockfd, buff, sizeof(buff));
     printf("%s\n",buff);

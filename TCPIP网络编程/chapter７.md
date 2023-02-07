@@ -1,6 +1,11 @@
 ## 优雅的断开套接字连接
+
+本节重点：
+
+1. 知道如何在基于TCP协议的服务端中实现半关闭
+
 ##### 1.基于TCP的半关闭
-1. Linux下的close函数意味着完全断开连接，完全断开就不能传输数据，也不能接收数据。==为了解决这个问题，只关闭一部分数据交换中使用的流的方法产生，断开一部分连接指的是可以传输数据但是无法接收或者可以接收数据但是无法传输。==
+1. Linux下的close函数意味着完全断开连接，完全断开就不能传输数据，也不能接收数据。==为了解决这个问题，只关闭一部分数据交换中使用的流的方法产生，断开一部分连接指的是可以传输数据但是无法接收或者可以接收数据但是无法传输。即只关闭流的一半（流分为输入流和输出流）==
 2. 套接字生成的流如下：
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-b24e2d76f116bddf.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 半关闭即断开IO流1或者IO流２
@@ -26,26 +31,28 @@ int shutdown(int sock, int howto);
 <font color = red>note:EOF的值为0</font>
 1. 发文件的服务器端如下：
 ```
-#include <cstdio>
+#include <stdio.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <cstdlib>
-#include <cstring>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 int main(int argc, char* argv[])
 {
     FILE* fp;
     // 以读的方式打开一个文件
-    fp = fopen("file_server.cpp", "rb");
+    fp = fopen("des.txt", "rb");
     char buff[30];
     if (argc != 2)
     {
         printf("usage:%s <port>",argv[0]);
         exit(-1);
     }
+
     // 创建TCP服务端套接字
     int sockfd = socket(PF_INET, SOCK_STREAM, 0);
+
     // 分配套接字地址
     struct sockaddr_in  addr_in;
     memset(&addr_in, 0, sizeof(addr_in));
@@ -53,11 +60,13 @@ int main(int argc, char* argv[])
     addr_in.sin_port = htons(atoi(argv[1]));    
     addr_in.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
+    bind(sockfd, (const struct sockaddr*)&addr_in, sizeof(addr_in));
+
     listen(sockfd, 5);
+
     struct sockaddr_in client_in;
     socklen_t client_in_len = sizeof(client_in);
-    int cli_fd = accept(sockfd, (sockaddr*)&client_in, &client_in_len);
+    int cli_fd = accept(sockfd, ( struct sockaddr*)&client_in, &client_in_len);
     size_t size = sizeof(buff);
     // 循环读取文件，写出数据到客户端
     while (1)
@@ -73,6 +82,7 @@ int main(int argc, char* argv[])
     }
     // 关闭输出流（半关闭）
     shutdown(cli_fd, SHUT_WR);
+    // 还可以通过输入流接收数据
     read(cli_fd, buff, size);
     printf("Message from client:%s\n", buff);
 
@@ -85,10 +95,10 @@ int main(int argc, char* argv[])
 ```
 2. 收文件的客户端如下：
 ```
-#include <cstdio>
+#include <stdio.h>
 #include <sys/socket.h>
-#include <cstring>
-#include <cstdlib>
+#include <string.h>
+#include <stdlib.h>
 #include <arpa/inet.h>
 #include <unistd.h> //for read
 
@@ -108,7 +118,8 @@ int main(int argc, const char* argv[])
     serv_addr.sin_port = htons(atoi(argv[2]));
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    connect(sockfd, (sockaddr*)&serv_addr, sizeof(serv_addr));
+    connect(sockfd, (const struct sockaddr*)&serv_addr, sizeof(serv_addr));
+    
     // 创建文件，保存服务器端发来的文件数据
     FILE* fp = fopen("destination.txt", "wb");
     char buff[30];

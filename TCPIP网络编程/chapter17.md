@@ -1,5 +1,13 @@
 # 优于select的epoll
+
+本节要点：
+
+1. 熟悉epoll相关的API
+2. 熟悉epoll的三种工作模式：水平触发模式（又称条件触发）、边缘触发阻塞模式、边缘触发非阻塞模式
+3. 熟悉epoll的几种工作模式的优缺点
+
 ==epoll方式只在Linux下支持，相比而言，select大部分操作系统都支持。==
+
 ## 1.实现epoll时必要的函数和结构体
 ##### 1.克服select函数缺点的epoll函数具有如下优点：
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-e84fced3eb650320.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
@@ -26,7 +34,7 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event);
     epfd:用于注册监视对象的epoll例程的文件描述符
     op:用于指定监视对象的添加、删除、更改等操作
     fd:监视对象文件描述符
-    event：监视对象的事件类型
+    event：指定监视对象的事件类型（注册关注的事件）
 ```
 3. 该函数调用示例
 ```
@@ -188,7 +196,7 @@ int main(int argc, char* argv[])
 
 ## 2.epoll的三种工作模式
 ##### 1.水平触发模式（epoll的默认工作模式，Level Trigger）
-1. 根据读来解释。只要服务端fd对应的缓冲区有数据，epoll_wait就会返回。返回的次数和客户端发送数据的次数没有关系。==又称条件触发，条件触发模式中，只要输入缓冲中有数据epoll_wait就会一直通知该事件。== epoll_wait调用次数越多，系统的开销越大。
+1. 根据读来解释。只要服务端fd对应的输入缓冲区还有数据，epoll_wait就会返回，检测到的就绪事件保存在epoll_wait的参数中。返回的次数和客户端发送数据的次数没有关系。==又称条件触发，条件触发模式中，只要输入缓冲中有数据epoll_wait就会一直通知该事件。== epoll_wait调用次数越多，系统的开销越大。
 2. 示例
 ```
 #include <stdio.h>
@@ -282,6 +290,7 @@ int main(int argc, char* argv[])
 ```
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-d75624f603bad144.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-8f6d509e662b0032.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+3. select模型中，他也是以水平触发模式工作的。
 
 ##### 2.边沿触发模式（Edge Trigger，边沿触发阻塞模式）
 1. 客户端发送一次数据，服务端的epoll_wait返回一次。不在乎服务端套接字的输入缓冲区中的数据是否读完。==即边缘触发中输入缓冲收到数据时仅仅注册一次该事件。即使输入缓冲中还留有数据，也不会进行注册。==
@@ -303,7 +312,7 @@ while (recv())
 
 ##### 3.边沿非阻塞模式
 1. 三种工作模式中效率最高。因为ET模式在很大程度上降低了同一个epoll事件被触发的次数，因此效率比LT模式高。
-2. 将套接字改为非阻塞的方法：使用fcntl函数
+2. 将套接字改为非阻塞的方法：使用fcntl函数更改套接字特性
 ```
 #include <fcntl.h>
 int fcntl(int filedes, int cmd,...);
@@ -328,7 +337,8 @@ fcntl(fd, F_SETFL, flag | O_NONBLOCK);
 // 比如说read函数发现输入缓冲中没有数据可读时返回-1，
 // 同时在errno中保存EAGAIN
 ```
-==通过errno变量确认错误原因：边缘触发模式中，接收数据时仅仅注册一次该事件。所以一旦服务端中发生输入事件，就应该读取输入缓冲中的全部数据，因此需要验证输入缓冲是否为空。==
+==通过errno变量确认错误原因：边缘触发模式中，接收数据时仅仅注册一次该事件。所以一旦服务端中发生输入事件，就应该读取输入缓冲中的全部数据，因此需要验证输入缓冲是否为空。== 当read函数返回-1，变量errno的值为EAGAIN时，说明数据全部读完。
+
 4. 边沿触发非阻塞模式的回声服务器端如下：
 ```
 #include <stdio.h>
@@ -469,6 +479,7 @@ int main(int argc, char* argv[])
     return 0;
 }
 ```
+5. 使用边缘触发模式可以分离数据的接收和发送点。
 ## 3.文件描述符突破1024限制
 ##### 1.select
 通过数组实现。突破不了，需要编译内核
