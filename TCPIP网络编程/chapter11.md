@@ -1,4 +1,10 @@
 # 进程间通信
+
+本节要点：
+
+1. 熟悉通过管道进行两个进程间的单向通信：使用一个管道
+2. 熟悉通过管道进行两个进程间的双向通信：使用两个管道
+
 ## 1.进程间通信的基本概念
 1. 进程间通信（inter process communication）：不同进程之间交换数据，简称IPC。为了实现这一点，OS应当提供两个进程可以同时访问的内存空间，比如说管道。
 ## 2.通过管道实现进程间通信
@@ -14,7 +20,7 @@ int pipe(int fileds[2]);
     fileds[0]表示从管道接收数据时使用的文件描述符，即管道出口
     fileds[1]表示管道传输数据时使用的文件描述符，即管道入口
 ```
-2. 示例：
+2. 示例：通过fork调用将管道入口或者出口中的1个文件描述符传递给子进程，这是单向通信
 ```
 #include <cstdio>
 #include <unistd.h> // for pipe()
@@ -55,9 +61,11 @@ int main()
 2.示例二：创建两个管道进行双向通信,双向通向模型如下：
 ![image.png](https://upload-images.jianshu.io/upload_images/17728742-ee3e6f6e0317e3be.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
-```
-#include <cstdio>
+```c
+#include <stdio.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <wait.h>
 
 int main()
 {
@@ -82,10 +90,12 @@ int main()
         read(pipedes1[0], buff, sizeof(buff));
         printf("parent process recieve:%s\n", buff);
         write(pipedes2[1], mess2, sizeof(mess2));
+        // 防止僵尸进程的出现
+        waitpid(child_id, NULL, WNOHANG);
     }
     return 0;
 }
 ```
 ==上述示例中，子进程通过管道1向父进程传输数据，父进程通过管道2向子进程传输数据。==
 ##### 3.运用进程间通信示例
-对chapter10中的回声服务器端进行改进：将回声客户端传输的字符串按序保存到文件中。
+1. 对chapter10中的回声服务器端进行改进：将回声客户端传输的字符串按序保存到文件中。

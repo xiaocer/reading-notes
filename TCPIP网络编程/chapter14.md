@@ -1,7 +1,18 @@
 # 多播与广播
+
+本节要点：
+
+1. 知道多播和广播的区别：
+    	1. 多播：多播的应用范围更广。多播即使在跨越不同网络的情况下，只要加入多播组就能接收数据。
+    	2. 广播：只能向同一网络的主机传输数据。两者都是基于UDP协议通信。
+2. 熟悉如何通过修改套接字选项设置TTL以及如何加入多播组，使用setsockpot函数
+3. 熟悉如何通过修改套接字选项设置套接字支持广播，使用setsockopt函数
+
 ## 1.多播
 ##### 1.多播的概念
-多播方式的数据传输基于UDP完成的，所以多播数据包的格式和UDP数据包相同。采用多播方式时，可以同时向多个主机传输数据。多播需要借助路由器完成，路由器将复制该数据包并传递到同一个网络中加入同一个多播组的多个主机
+1. 多播方式的数据传输基于UDP完成的，所以多播数据包的格式和UDP数据包相同。采用多播方式时，可以同时向多个主机传输数据。多播需要借助路由器完成(不少路由器不支持多播)，路由器将复制该数据包并传递到同一个网络中加入同一个多播组的多个主机
+2. 应用场景：需要向大量客户端发送相同数据
+
 ##### 2.多播的数据传输方式
 1. 多播的数据传输特点
 ```
@@ -14,7 +25,7 @@
 ##### 3.生存时间（TTL：time to live）的设置
 TTL是决定数据包传递距离的主要因素，TTL用整数表示，每经过一个路由器就减一，TTL变为0时，该数据包就无法再被传递，只能销毁。
 1. TTL的设置方法：通过套接字的可选项完成。==与设置TTL相关的协议层为IPPROTO_IP,选项名为IP_MULTICAST_TTL.==
-```
+```c
 // 示例：
 int time_live = 64;
 inte sendsock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -24,7 +35,7 @@ setsockopt(sendsock, IPPROTO_IP, IP_MULTICAST_TTL,
 ```
 ##### 4.加入多播组的设置
 加入多播组的设置也是通过设置套接字选项来完成。==加入多播组相关的协议层为IPPROTO_IP,选项名为IP_ADD_MEMBERSHIP==
-```
+```c
 // 示例
 struct ip_mreq join_addr;
 int recv_sock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -34,24 +45,23 @@ setsockopt(recv_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP，
 (void*)&join_addr, sizeof(join_addr));
 ```
 ip_mreq结构体如下：
-```
+```c
 struct ip_mreq
 {
     struct in_addr imr_multiaddr;   // 加入的组的IP地址
-    struct in_addr imr_interface;   // 加入该组的套接字所属
-    //主机的IP地址
+    struct in_addr imr_interface;   // 加入该组的套接字所属主机的IP地址
 }
 ```
 ##### 5.实现多播Sender和Receiver
 1. 多播数据的发送主体Sender示例如下,Sender的功能为：向AAA组广播文件中保存的新闻信息
-```
+```c
 #include <sys/socket.h>
 #include <stdio.h>
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-
+// Sender创建UDP套接字，并向多播地址发送数据
 #define TTL 64;
 int main(int argc, char* argv[])
 {
@@ -90,7 +100,7 @@ int main(int argc, char* argv[])
 }
 ```
 2. Reciever：接受传递到AAA组的新闻信息
-```
+```c
 #include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -119,7 +129,7 @@ int main(int argc, char* argv[])
     struct ip_mreq join_addr;
     // 多播组IP地址
     join_addr.imr_multiaddr.s_addr = inet_addr(argv[1]);
-    // 待加入主机的IP地址
+    // 待加入多播组主机的IP地址
     join_addr.imr_interface.s_addr = htonl(INADDR_ANY);
     setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const void*)&join_addr, sizeof(join_addr));
     
@@ -149,7 +159,7 @@ int main(int argc, char* argv[])
     数据将传输到该网络中的所有主机
 ```
 3. 默认生成的套接字会阻止广播，可以通过更改套接字可选项来更改这个默认设置。
-```
+```c
 int send_sock = socket(PF_INET, SOCK_SGRAM, 0);
 int bcast = 1;
 setsockopt(send_sock, SOL_SOCKET, SO_BROADCAST, (void*)&bcast, sizeof(bcast));
