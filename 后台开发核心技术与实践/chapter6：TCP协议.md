@@ -84,3 +84,157 @@
 6. SO_LINGER：延缓套接字的close操作，默认close操作立即返回，将发送缓冲区的数据发送给对端。
     1. SO_LINGER可以改变close的行为，控制SO_LINGER通过下面这个结构体
     ![image.png](https://upload-images.jianshu.io/upload_images/17728742-6eceec7db8807808.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+7. 选项TCP_DEFER_ACCEPT：当接收到第一个数据后才会创建连接。这个字段可以用来防御空连接攻击（只是建立连接但是不发送任何数据）。
+8. 选项SO_RCVBUF和SO_SNDBUF：每个TCP套接字都有一个发送缓冲区和接收缓冲区。这两个套接字选项可以改变默认缓冲区的大小
+9. 选项SO_SNDTIMEO和SO_RCVTIMEO：分别设置socket的发送和接收超时时间。如果在超时时间内还没有收到数据，就会关闭连接。
+10. SO_KEEPALIVE：用于保持连接，检测对方主机是否崩溃，避免服务器永久阻塞于TCP连接的输入。
+	1. 设置该选项可能导致的情况：
+	![image.png](https://upload-images.jianshu.io/upload_images/17728742-6fe4fe975047ec2b.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+	![image.png](https://upload-images.jianshu.io/upload_images/17728742-4f2200b3d99ca895.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+	2. 有关SO_KEEPALIVE的三个参数的解释如下
+	![image.png](https://upload-images.jianshu.io/upload_images/17728742-e870ea0d1ddc41ad.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+## 3.网络字节序和主机字节序
+1. 主机字节序：指的是整数在内存中保存的顺序。常见的有两种：
+	1. 小端序：将低位有效字节存放在起始地址处
+	2. 大端序：将高位有效字节存放在起始地址处
+2. 网络字节序：所有网络协议都是采用大端序的方式传输数据的。所以大端序又称之为网络字节序。
+## 4.封包和解包
+1. 粘包：TCP是一个基于字节流的协议，所谓流，就是没有界限的一串数据。在发送端连续发送两段数据，接收端接收时无法将接收到的数据进行区分拆成两段。==UDP协议就不存在粘包问题==
+	1. 粘包的问题示例：在数据传输时假设连续两次调用send发送两段数据data1和data2，在接收端可能有如下情况：
+		1. 先接收到data1，然后接收data2(正常的，正是我们需要的)
+		2. 先接收到data1的部分数据，然后接收到data1余下的部分以及data2的全部
+		3. 先接收到data1的全部数据和data2的部分数据，然后接收到了data2的余下的数据
+		4. 一次性接收到了data1和data2的全部数据
+	2. 粘包可能发生在发送端，也可能发生在接收端。粘包的问题原因分析如下：
+		1. 对于粘包问题34，有可能因为Nagle算法造成的发送端的粘包。当要提交一段数据给TCP发送时，TCP并不立即发送此段数据，而是等待一小段时间，看看在等待期间是否还有要发送的数据，如果有则会一次性将多段数据发送出去
+		2. 对于粘包问题2，可能由于接收端接收数据不及时造成的接收端粘包。
+2. 粘包问题的解决：对数据包进行封包和解包
+	1. 封包：给一段数据加上固定长度的包头，例如4个字节表示包体的长度。包头中有个字段记录了包体的长度，这样一段数据就分为包头和包体。
+3. 封包解包示例：客户端向服务端发送一段数据
+	1. 服务端：
+	```
+	// 服务端接受一个字符串
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <errno.h>
+
+    int readN(int fd, char* buffer, int count) {
+        int read_len = 0;
+        while (read_len < count) {
+            int ret;
+            do {
+                ret = read(fd, buffer, count - read_len);
+            } while (ret < 0 && errno == EINTR); // read读取中被信号中断则继续
+            if (ret == -1) {
+                return ret;
+            } else if (ret == 0) {
+                return read_len;
+            } 
+            read_len += ret;
+            buffer += ret;
+        }
+        return read_len;
+    }
+    int main(int argc, char* argv[]) {
+        if (argc != 3) {
+            printf("usage:%s <IP> <PORT>\n", argv[0]);
+            return -1;
+        }
+        int lfd = socket(PF_INET, SOCK_STREAM, 0);
+
+        struct sockaddr_in serv_addr;
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(atoi(argv[2]));
+        inet_pton(AF_INET, argv[1], (void*)&serv_addr.sin_addr);
+        bind(lfd, (const struct sockaddr*)&serv_addr, sizeof(serv_addr));
+
+        listen(lfd, 128);
+
+        char buffer[128];
+        int client_fd = accept(lfd, NULL, NULL);
+
+        // 接收4个字节的包头
+        int read_len = readN(client_fd, buffer, 4);
+        if (read_len != 4) {
+            return -1;
+        }
+
+        int packetHead = ntohl(*(int*)buffer);
+        printf("包体的大小为:%d\n", packetHead);
+
+        read_len = readN(client_fd, buffer, packetHead);
+        if (read_len != packetHead) {
+            return -1;
+        }
+        buffer[read_len] = 0;
+        printf("客户端发送的数据为:%s\n", buffer);
+
+        close(client_fd);
+        close(lfd);
+
+        return 0;
+    }
+	```
+	2. 客户端：
+	```
+	#include <stdio.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <errno.h>
+
+    int sendN(int fd, char* buffer, int count) {
+        int send_len = 0;
+        while (send_len < count) {
+            int write_len;
+            do {
+                write_len = write(fd, buffer, count - send_len);
+            } while (write_len < 0 && errno == EINTR);
+
+            if (write_len == -1) {
+                return -1;
+            } else if (write_len == 0) {
+                return send_len;
+            }
+            send_len += write_len;
+            buffer += write_len;
+        }
+        return send_len;
+    }
+    int main(int argc, char* argv[]) {
+        if (argc != 3) {
+            printf("usage:%s <IP> <PORT>\n", argv[0]);
+            return -1;
+        }
+        int fd = socket(PF_INET, SOCK_STREAM, 0);
+
+        struct sockaddr_in serv_addr;
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(atoi(argv[2]));
+        inet_pton(AF_INET, argv[1], (void*)&serv_addr.sin_addr);
+
+        connect(fd, (const struct sockaddr*)&serv_addr, sizeof(serv_addr));
+
+        char data[] = "0123456789";
+        int data_len = strlen(data);
+        char* buffer = (char*)malloc(128);
+        // 封包：四个字节的包头
+        *(int*)buffer = htonl(data_len);
+        memcpy(buffer + sizeof(data_len), data, data_len);
+
+        int ret = sendN(fd, buffer, data_len + 4);
+        if (ret <= 0) {
+            return -1;
+        } 
+        printf("客户端发送的数据长度：%d,发送的数据为:%s\n", data_len + 4, data);
+
+        free(buffer);
+
+        close(fd);
+        return 0;
+    }
+	```
